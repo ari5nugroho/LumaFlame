@@ -402,14 +402,23 @@ export class AnimationEngine {
 
   /* ─────────── Candle Shadow ─────────── */
   _drawShadow(ctx, W, H) {
-    const candleBottomY = H - 35;
+    const candleBottomY = H - 30;
     const cw = Math.max(120, Math.min(260, W * 0.22));
-    const shadowOpacity = this.isLit ? 0.07 : 0.18;
+    const rx = cw * 0.30;
+    const ry = cw * 0.06;
+    // Soft radial gradient — fades from center to transparent for a natural look
+    const shadowOpacity = this.isLit ? 0.04 : 0.08;
 
     ctx.save();
-    ctx.fillStyle = `rgba(0, 0, 0, ${shadowOpacity})`;
+    ctx.translate(W / 2, candleBottomY);
+    ctx.scale(1, ry / rx); // squash into ellipse shape
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
+    g.addColorStop(0,   `rgba(0, 0, 0, ${shadowOpacity})`);
+    g.addColorStop(0.5, `rgba(0, 0, 0, ${shadowOpacity * 0.5})`);
+    g.addColorStop(1,   'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = g;
     ctx.beginPath();
-    ctx.ellipse(W / 2, candleBottomY, cw * 0.35, cw * 0.08, 0, 0, Math.PI * 2);
+    ctx.arc(0, 0, rx, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
