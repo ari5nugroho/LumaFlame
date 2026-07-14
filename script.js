@@ -72,11 +72,32 @@ function handleExtinguish() {
    Per-frame logic hook (injected into engine._frame)
 ══════════════════════════════════════════════════════════════ */
 function onBeforeFrame() {
-  const W = mainCanvas.width;
-  const H = mainCanvas.height;
+  // Use logical CSS pixel dimensions for coordinate mapping (mainCanvas is DPR-scaled)
+  const W = (engine && engine._logicalW) || viewport.clientWidth;
+  const H = (engine && engine._logicalH) || viewport.clientHeight;
 
-  // Map normalised MediaPipe coords → canvas pixel coords
-  if (tracker) tracker.updateScreenCoords(W, H);
+  // Map normalised MediaPipe coords → canvas pixel coords,
+  // corrected for the cover-fit crop applied in _drawCamera().
+  if (tracker && tracker.indexTipNorm && engine) {
+    const norm = tracker.indexTipNorm;
+    const { sx, sy, sW, sH, vW, vH } = engine.getCoverFitParams(W, H);
+
+    // norm.x / norm.y are in [0,1] relative to the full video frame.
+    // The displayed region is the crop [sx,sy,sW,sH] of the video,
+    // stretched to fill [0,0,W,H] on canvas.
+    // Remap: canvasX_raw = (norm.x * vW - sx) / sW * W
+    //        canvasY     = (norm.y * vH - sy) / sH * H
+    // Then mirror: canvasX = W - canvasX_raw
+    const rawX = (norm.x * vW - sx) / sW * W;
+    const rawY = (norm.y * vH - sy) / sH * H;
+
+    tracker.indexTipScreen = {
+      x: W - rawX,   // horizontal mirror to match _drawCamera's translate+scale(-1,1)
+      y: rawY,
+    };
+  } else if (tracker) {
+    tracker.updateScreenCoords(W, H);
+  }
 
   // Sync finger position to engine for rendering
   if (engine) {
@@ -112,7 +133,8 @@ async function init() {
 
     /* ── 2. Canvas size ────────────────── */
     resizeCanvas();
-    window.addEventListener('resize', debounce(resizeCanvas, 120));
+    window.addEventListener('resize',            debounce(resizeCanvas, 120));
+    window.addEventListener('orientationchange', debounce(resizeCanvas, 200));
 
     /* ── 3. Preload candle image ────────── */
     await waitForImage(candleImg);

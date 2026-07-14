@@ -170,7 +170,7 @@ export class AnimationEngine {
     this.interactionState = 'Candle Lit';
 
     // Trigger instant spark burst
-    const wick = this._getWickPos(this.mainCanvas.width, this.mainCanvas.height);
+    const wick = this._getWickPos(this._logicalW || this.mainCanvas.width, this._logicalH || this.mainCanvas.height);
     if (wick) {
       for (let i = 0; i < 20; i++) {
         this._particles.push(new Particle(wick.x, wick.y, 'spark'));
@@ -193,12 +193,26 @@ export class AnimationEngine {
   }
 
   resize(w, h) {
-    this.mainCanvas.width  = w;
-    this.mainCanvas.height = h;
+    const dpr = window.devicePixelRatio || 1;
+    this.mainCanvas.width        = Math.round(w * dpr);
+    this.mainCanvas.height       = Math.round(h * dpr);
+    this.mainCanvas.style.width  = w + 'px';
+    this.mainCanvas.style.height = h + 'px';
+    this._logicalW = w;
+    this._logicalH = h;
+    this._dpr      = dpr;
   }
 
   getWickScreenPos(W, H) {
     return this._getWickPos(W, H);
+  }
+
+  /* ─────────── Device Scale Helper ─────────── */
+  getDeviceScale() {
+    const w = this._logicalW || window.innerWidth;
+    if (w < 600)  return 0.50; // Phone
+    if (w < 1024) return 0.75; // Tablet
+    return 1.0;                // Desktop
   }
 
   /* ─────────── Proximity & Ignition Logic ─────────── */
@@ -295,17 +309,20 @@ export class AnimationEngine {
   /* ─────────── Rendering Elements ─────────── */
 
   _frame() {
-    const ctx = this.ctx;
-    const W   = this.mainCanvas.width;
-    const H   = this.mainCanvas.height;
-    const t   = this._t;
+    const ctx  = this.ctx;
+    const dpr  = this._dpr || 1;
+    // Use logical (CSS pixel) dimensions so all draw calculations are resolution-independent
+    const W    = this._logicalW || this.mainCanvas.width;
+    const H    = this._logicalH || this.mainCanvas.height;
+    const t    = this._t;
 
-    // 1 — Mirrored webcam feed (Camera)
+    // Clear at physical resolution, then scale ctx to logical space
+    ctx.clearRect(0, 0, this.mainCanvas.width, this.mainCanvas.height);
     ctx.save();
-    ctx.translate(W, 0);
-    ctx.scale(-1, 1);
-    ctx.drawImage(this.video, 0, 0, W, H);
-    ctx.restore();
+    ctx.scale(dpr, dpr);
+
+    // 1 — Mirrored cover-fitting camera draw
+    this._drawCamera(ctx, W, H);
 
     // 2 — Vignette (Dark Overlay)
     this._drawVignette(ctx, W, H);
@@ -344,6 +361,43 @@ export class AnimationEngine {
 
     // 11 — Finger dot (UI)
     this._drawFingerDot(ctx, W, t);
+
+    ctx.restore(); // end DPR scale
+  }
+
+
+  /**
+   * Returns the cover-fit source crop rectangle used when drawing the webcam.
+   * Used to remap MediaPipe normalized coords to correct canvas positions.
+   * @returns {{ sx, sy, sW, sH, vW, vH }}
+   */
+  getCoverFitParams(W, H) {
+    const vW = this.video.videoWidth  || 640;
+    const vH = this.video.videoHeight || 480;
+    const canvasRatio = W / H;
+    const videoRatio  = vW / vH;
+    let sx, sy, sW, sH;
+    if (videoRatio > canvasRatio) {
+      sH = vH;  sW = vH * canvasRatio;
+      sx = (vW - sW) / 2;  sy = 0;
+    } else {
+      sW = vW;  sH = vW / canvasRatio;
+      sx = 0;  sy = (vH - sH) / 2;
+    }
+    return { sx, sy, sW, sH, vW, vH };
+  }
+
+  /**
+   * Draws the webcam feed with aspect-ratio cover-fitting (mirrors CSS object-fit:cover).
+   * Prevents black bars or image stretching on any screen size or orientation.
+   */
+  _drawCamera(ctx, W, H) {
+    const { sx, sy, sW, sH } = this.getCoverFitParams(W, H);
+    ctx.save();
+    ctx.translate(W, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(this.video, sx, sy, sW, sH, 0, 0, W, H);
+    ctx.restore();
   }
 
   /* ─────────── Candle Shadow ─────────── */
@@ -373,7 +427,10 @@ export class AnimationEngine {
   _drawCandle(ctx, W, H, t) {
     if (!this.candleImg || !this.candleImg.complete) return;
 
-    const cw = Math.max(120, Math.min(260, W * 0.22));
+    // Clamp width: scales with viewport, minimum = 14% of logical width (mobile-friendly)
+    const cwMin = Math.max(80,  W * 0.14);
+    const cwMax = Math.min(260, W * 0.28);
+    const cw = Math.max(cwMin, Math.min(cwMax, W * 0.22));
     const ch = this.candleImg.naturalHeight * (cw / this.candleImg.naturalWidth);
     const cx = (W - cw) / 2;
     const cy = (H - 35) - ch;
@@ -437,19 +494,19 @@ export class AnimationEngine {
 
   /* ─────────── Particles (Pre- & Post-Ignition) ─────────── */
   updateParticles(ctx, W, H, t) {
-    const wick = this._getWickPos(W, H);
+    const wick  = this._getWickPos(W, H);
+    const scale = this.getDeviceScale();
 
     // Spawn tiny golden particles before ignition when finger is approaching
     if (!this.isLit && this.proximityGlow > 0.05 && wick) {
-      // Proportional spawn chance
-      const spawnChance = 0.08 * this.proximityGlow;
+      const spawnChance = 0.08 * this.proximityGlow * scale;
       if (Math.random() < spawnChance) {
         this._particles.push(new Particle(wick.x, wick.y, 'gold'));
       }
     }
 
     // Spawn post-ignition embers
-    if (this.isLit && Math.random() < 0.28 && wick) {
+    if (this.isLit && Math.random() < 0.28 * scale && wick) {
       this._particles.push(new Particle(wick.x, wick.y - 12, 'glow'));
     }
 
@@ -474,7 +531,10 @@ export class AnimationEngine {
       return true;
     });
 
-    if (this._particles.length > 90) this._particles.splice(0, 15);
+    const maxParticles = Math.floor(90 * scale);
+    if (this._particles.length > maxParticles) {
+      this._particles.splice(0, this._particles.length - maxParticles);
+    }
   }
 
   /* ─────────── Flame ─────────── */

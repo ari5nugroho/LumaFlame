@@ -30,6 +30,10 @@ html, body {
   font-family: var(--font-serif);
   color: var(--text-cream);
   -webkit-font-smoothing: antialiased;
+  /* Prevent scroll-bounce and zoom on mobile */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 /* ── Loading Screen ─────────────────────────────────────────── */
@@ -106,6 +110,9 @@ html, body {
   align-items: center;
   background: radial-gradient(ellipse 90% 70% at 50% 90%, #1e1008 0%, #0a0705 60%, #050302 100%);
   transition: background 1.5s ease;
+  /* Safe-area insets for iPhone notch / Dynamic Island */
+  padding-left:  env(safe-area-inset-left,  0px);
+  padding-right: env(safe-area-inset-right, 0px);
 }
 
 /* Background ambient particles (CSS only) */
@@ -161,7 +168,7 @@ html, body {
   position: relative;
   z-index: 10;
   text-align: center;
-  padding: 18px 20px 10px;
+  padding: calc(18px + env(safe-area-inset-top, 0px)) 20px 10px;
   pointer-events: none;
 }
 
@@ -198,6 +205,7 @@ html, body {
   box-shadow: 0 -4px 40px rgba(0,0,0,0.6),
               inset 0 0 0 1px rgba(255,180,60,0.06);
   background: #050302;
+  touch-action: none; /* Prevent swipe gestures inside the canvas area */
 }
 
 /* Hidden webcam — off-screen, used by MediaPipe */
@@ -216,14 +224,15 @@ html, body {
   width: 100%;
   height: 100%;
   display: block;
+  touch-action: none; /* Prevent double-tap zoom on mobile */
   /* NO scaleX(-1) here — mirroring is done in JS drawImage */
 }
 
 /* ── Status Chip ─────────────────────────────────────────────── */
 #status-chip {
   position: absolute;
-  top: 14px;
-  right: 14px;
+  top: calc(14px + env(safe-area-inset-top, 0px));
+  right: calc(14px + env(safe-area-inset-right, 0px));
   z-index: 60;
   display: flex;
   align-items: center;
@@ -239,6 +248,7 @@ html, body {
   text-transform: uppercase;
   color: var(--text-muted);
   transition: opacity 0.4s ease;
+  pointer-events: none;
 }
 
 #status-dot {
@@ -270,7 +280,7 @@ html, body {
 #app-footer {
   position: relative;
   z-index: 10;
-  padding: 10px 20px 14px;
+  padding: 10px 20px calc(14px + env(safe-area-inset-bottom, 0px));
   text-align: center;
   pointer-events: none;
 }
@@ -288,10 +298,24 @@ body.candle-lit #app {
   background: radial-gradient(ellipse 80% 65% at 50% 95%, #281a06 0%, #0c0806 55%, #050302 100%);
 }
 
-/* ── Responsive ─────────────────────────────────────────────── */
-@media (max-width: 600px) {
-  #app-title    { font-size: 1.2rem; letter-spacing: 0.1em; }
-  #app-header   { padding: 12px 16px 6px; }
-  #app-footer p { font-size: 0.62rem; }
-  #status-chip  { top: 8px; right: 8px; font-size: 0.65rem; }
+/* ── Responsive — Tablet (≤ 1024px) ────────────────────────── */
+@media (max-width: 1024px) {
+  #app-title  { font-size: clamp(1.2rem, 3vw, 1.9rem); }
+}
+
+/* ── Responsive — Mobile (≤ 768px) ─────────────────────────── */
+@media (max-width: 768px) {
+  #app-header   { padding: calc(10px + env(safe-area-inset-top, 0px)) 14px 6px; }
+  #app-title    { font-size: clamp(1rem, 5vw, 1.4rem); letter-spacing: 0.08em; }
+  #app-subtitle { font-size: clamp(0.65rem, 3vw, 0.82rem); letter-spacing: 0.12em; }
+  #app-footer   { padding: 6px 14px calc(10px + env(safe-area-inset-bottom, 0px)); }
+  #app-footer p { font-size: clamp(0.58rem, 2.5vw, 0.72rem); letter-spacing: 0.1em; }
+  #status-chip  {
+    top:       calc(8px + env(safe-area-inset-top,   0px));
+    right:     calc(8px + env(safe-area-inset-right, 0px));
+    font-size: 0.62rem;
+    padding:   5px 10px 5px 8px;
+    gap:       5px;
+  }
+  #viewport { border-radius: 8px 8px 0 0; }
 }
