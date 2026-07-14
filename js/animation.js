@@ -10,6 +10,8 @@
  *   7. Finger-tracking glow dot
  */
 
+import { DynamicLight } from './dynamicLight.js';
+
 /* ─── Smooth Noise Helper ────────────────────────────── */
 function smoothNoise(t) {
   return Math.sin(t * 1.7) * 0.5 +
@@ -110,6 +112,9 @@ export class AnimationEngine {
     this.ctx        = mainCanvas.getContext('2d');
     this.video      = videoEl;
     this.candleImg  = candleImg;
+
+    /** Volumetric Dynamic Light System */
+    this.dynamicLight = new DynamicLight();
 
     /** Candle state */
     this.isLit          = false;
@@ -295,48 +300,49 @@ export class AnimationEngine {
     const H   = this.mainCanvas.height;
     const t   = this._t;
 
-    // 1 — Mirrored webcam feed
+    // 1 — Mirrored webcam feed (Camera)
     ctx.save();
     ctx.translate(W, 0);
     ctx.scale(-1, 1);
     ctx.drawImage(this.video, 0, 0, W, H);
     ctx.restore();
 
-    // 2 — Vignette
+    // 2 — Vignette (Dark Overlay)
     this._drawVignette(ctx, W, H);
 
-    // 3 — Soft shadow directly beneath the candle
+    // 3 — Dynamic Light updates & rendering
+    const wick = this._getWickPos(W, H) || { x: W / 2, y: H - 150 };
+    const fs = 1 + smoothNoise(t * 5.1) * 0.04; // Sync breathing with flame scale fluctuations
+    this.dynamicLight.syncWithFlame(fs);
+    this.dynamicLight.updateLight(this.isLit, this.proximityGlow, t, this.igniteTime);
+    this.dynamicLight.renderLight(ctx, wick.x, wick.y, this.isLit, this.proximityGlow);
+
+    // 4 — Soft shadow directly beneath the candle
     this._drawShadow(ctx, W, H);
 
-    // 4 — Candle image
+    // 5 — Candle image
     this._drawCandle(ctx, W, H, t);
 
-    // 5 — Proximity updates (mapping distance to 0.0 - 1.0)
+    // 6 — Proximity updates (mapping distance to 0.0 - 1.0)
     this.updateProximity(W, H);
 
-    // 6 — Ignition timer checking
+    // 7 — Ignition timer checking
     this.updateIgnition(W, H);
 
-    // 7 — Render proximity glow halo & wick illumination
+    // 8 — Render proximity glow halo & wick illumination
     this.renderGlow(ctx, W, H, t);
 
-    // 8 — Ambient glow when lit
-    if (this.isLit || this.extinguishTime !== null) {
-      const litOpacity = this.isLit ? 1.0 : Math.max(0, 1 - (t - this.extinguishTime) / 0.8);
-      if (litOpacity > 0) this._drawAmbientGlow(ctx, W, H, t, litOpacity);
-    }
-
-    // 9 — Update & draw particles
-    this.updateParticles(ctx, W, H, t);
-
-    // 10 — Flame & smoke
+    // 9 — Flame & smoke
     const showFlame = this.isLit || (this.extinguishTime !== null && t - this.extinguishTime < 0.55);
     const showSmoke = this.isLit || (this.extinguishTime !== null && t - this.extinguishTime < 2.5);
 
     if (showFlame) this._drawFlame(ctx, W, H, t);
     if (showSmoke) this._drawSmoke(ctx, W, H, t);
 
-    // 11 — Finger dot
+    // 10 — Particles
+    this.updateParticles(ctx, W, H, t);
+
+    // 11 — Finger dot (UI)
     this._drawFingerDot(ctx, W, t);
   }
 
@@ -389,35 +395,6 @@ export class AnimationEngine {
       ctx.drawImage(this.candleImg, cx, cy, cw, ch);
       ctx.restore();
     }
-  }
-
-  /* ─────────── Ambient Glow ─────────── */
-  _drawAmbientGlow(ctx, W, H, t, opacity = 1) {
-    const candleBottomY = H - 35;
-    const pulse = 0.95 + 0.05 * Math.sin(t * 3.5);
-    const radius = 120 * pulse * opacity;
-
-    ctx.save();
-    ctx.globalCompositeOperation = 'screen';
-
-    const g = ctx.createRadialGradient(W/2, candleBottomY, 0, W/2, candleBottomY, radius);
-    g.addColorStop(0,    `rgba(255, 154, 46, ${0.4 * opacity})`);
-    g.addColorStop(0.5,  `rgba(255, 120, 30, ${0.15 * opacity})`);
-    g.addColorStop(1,    'rgba(0,0,0,0)');
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.arc(W/2, candleBottomY, radius, 0, Math.PI * 2);
-    ctx.fill();
-
-    const baseGlow = ctx.createRadialGradient(W/2, candleBottomY, 0, W/2, candleBottomY, 35 * pulse * opacity);
-    baseGlow.addColorStop(0, `rgba(255, 200, 80, ${0.5 * opacity})`);
-    baseGlow.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = baseGlow;
-    ctx.beginPath();
-    ctx.arc(W/2, candleBottomY, 35 * pulse * opacity, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.restore();
   }
 
   /* ─────────── renderGlow (Proximity Feedback) ─────────── */
