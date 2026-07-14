@@ -1,44 +1,77 @@
 /**
  * animation.js
- * Handles ALL rendering on the main canvas:
+ * Handles ALL rendering and interaction state updates on the main canvas:
  *   1. Live webcam feed (mirrored via JS)
  *   2. Dark vignette + warm atmosphere
  *   3. Candle image (multiply blend — white bg removed)
- *   4. Procedural flame (small, accurate to wick tip)
- *   5. Rising smoke particles
- *   6. Floating warm ambient particles + sparks
+ *   4. Proximity Ignition logic (outer 80px radius, inner 20px radius, 400ms timer)
+ *   5. Particle simulation (tiny gold pre-ignite sparks, warm rising embers post-ignite)
+ *   6. Procedural flame (flickering, rotation, soft scale/brightness variations)
  *   7. Finger-tracking glow dot
  */
 
-/* ─── Smooth noise helper ────────────────────────────── */
+/* ─── Smooth Noise Helper ────────────────────────────── */
 function smoothNoise(t) {
   return Math.sin(t * 1.7) * 0.5 +
          Math.sin(t * 3.1) * 0.3 +
          Math.sin(t * 5.3) * 0.2;
 }
 
-/* ─── Ambient Particle ───────────────────────────────── */
+/* ─── Easing Helper (Smooth Step / Interpolation) ────── */
+function lerp(start, end, amt) {
+  return (1 - amt) * start + amt * end;
+}
+
+/* ─── Ambient / Gold / Spark Particle ────────────────── */
 class Particle {
   constructor(x, y, type = 'glow') {
     this.type = type;
     this.reset(x, y);
   }
+
   reset(x, y) {
-    this.x      = x + (Math.random() - 0.5) * 30;
-    this.y      = y;
-    this.vx     = (Math.random() - 0.5) * 0.7;
-    this.vy     = -(Math.random() * 1.2 + 0.3);
-    this.life   = 1.0;
-    this.decay  = Math.random() * 0.006 + 0.003;
-    this.radius = Math.random() * 2.0 + 0.6;
-    this.hue    = 28 + Math.random() * 28;
+    if (this.type === 'gold') {
+      // Tiny gold sparks floating near wick before ignition
+      this.x      = x + (Math.random() - 0.5) * 16;
+      this.y      = y + (Math.random() - 0.5) * 16;
+      this.vx     = (Math.random() - 0.5) * 0.4;
+      this.vy     = -(Math.random() * 0.4 + 0.1);
+      this.life   = 1.0;
+      this.decay  = Math.random() * 0.012 + 0.006;
+      this.radius = Math.random() * 1.3 + 0.4;
+      this.hue    = 42 + Math.random() * 10; // warm gold
+    } else if (this.type === 'spark') {
+      // Ignition spark burst
+      this.x      = x;
+      this.y      = y;
+      const angle = Math.random() * Math.PI * 2;
+      const speed = Math.random() * 2.2 + 0.6;
+      this.vx     = Math.cos(angle) * speed;
+      this.vy     = Math.sin(angle) * speed - 0.5;
+      this.life   = 1.0;
+      this.decay  = Math.random() * 0.03 + 0.015;
+      this.radius = Math.random() * 2.0 + 0.8;
+      this.hue    = 35 + Math.random() * 15; // orange-gold
+    } else {
+      // Standard ambient glow dust
+      this.x      = x + (Math.random() - 0.5) * 30;
+      this.y      = y;
+      this.vx     = (Math.random() - 0.5) * 0.6;
+      this.vy     = -(Math.random() * 1.0 + 0.2);
+      this.life   = 1.0;
+      this.decay  = Math.random() * 0.005 + 0.002;
+      this.radius = Math.random() * 1.8 + 0.5;
+      this.hue    = 28 + Math.random() * 28; // warm oranges
+    }
   }
+
   update() {
     this.x    += this.vx;
     this.y    += this.vy;
-    this.vx   += (Math.random() - 0.5) * 0.04;
+    this.vx   += (Math.random() - 0.5) * 0.03;
     this.life -= this.decay;
   }
+
   get isDead() { return this.life <= 0; }
 }
 
@@ -80,22 +113,33 @@ export class AnimationEngine {
 
     /** Candle state */
     this.isLit          = false;
-    this.igniteTime     = null;   // rAF timestamp of ignition
-    this.extinguishTime = null;   // rAF timestamp of extinguish
+    this.igniteTime     = null;
+    this.extinguishTime = null;
+    this.lastToggleTime = 0;
 
-    /** Finger tracking */
+    /** Finger tracking coords & state */
     this.fingerPos  = null;       // { x, y } in canvas pixels
     this.isNearWick = false;
 
-    /** Cached candle render rect — updated every frame */
+    /** Proximity Ignition Logic */
+    this.proximity      = 0.0;     // current target proximity (0.0 to 1.0)
+    this.proximityGlow  = 0.0;     // smoothed proximity with easing
+    this.ignitionTimer  = null;    // timestamp when finger entered inner radius
+    this.interactionState = 'Waiting...'; // Waiting..., Finger Detected, Ready to Ignite, Igniting..., Candle Lit
+
+    /** Callbacks for state synchronization */
+    this.onIgnite     = null;
+    this.onExtinguish = null;
+
+    /** Cached candle rect */
     this._candleRect = null;
 
-    /** Particle lists */
+    /** Active particles */
     this._particles = [];
     this._smokeList = [];
 
     this._rafId = null;
-    this._t     = 0; // seconds since page load
+    this._t     = 0;
   }
 
   /* ─────────── Public API ─────────── */
@@ -113,22 +157,33 @@ export class AnimationEngine {
     if (this._rafId) cancelAnimationFrame(this._rafId);
   }
 
-  /** Fire when candle is lit. */
   ignite() {
-    this.isLit          = true;
-    this.igniteTime     = this._t;
-    this.extinguishTime = null;
+    this.isLit            = true;
+    this.igniteTime       = this._t;
+    this.extinguishTime   = null;
+    this.lastToggleTime   = this._t;
+    this.interactionState = 'Candle Lit';
+
+    // Trigger instant spark burst
+    const wick = this._getWickPos(this.mainCanvas.width, this.mainCanvas.height);
+    if (wick) {
+      for (let i = 0; i < 20; i++) {
+        this._particles.push(new Particle(wick.x, wick.y, 'spark'));
+      }
+    }
   }
 
-  /**
-   * Fire when candle is blown out.
-   * After fade duration, resets isLit so it can be re-lit.
-   */
   extinguish() {
+    this.isLit          = false;
     this.extinguishTime = this._t;
-    this.isLit          = false; // collision logic also resets candle.isLit externally
+    this.lastToggleTime = this._t;
 
-    // Clear sparks immediately
+    // Clear ignition variables
+    this.ignitionTimer  = null;
+    this.proximity      = 0.0;
+    this.proximityGlow  = 0.0;
+
+    // Clear active sparks
     this._particles = this._particles.filter(p => p.type !== 'spark');
   }
 
@@ -137,12 +192,103 @@ export class AnimationEngine {
     this.mainCanvas.height = h;
   }
 
-  /** Return wick canvas position (for collision detector). */
   getWickScreenPos(W, H) {
     return this._getWickPos(W, H);
   }
 
-  /* ─────────── Main Frame ─────────── */
+  /* ─────────── Proximity & Ignition Logic ─────────── */
+
+  updateProximity(W, H) {
+    if (this.isLit) {
+      this.proximity      = 0.0;
+      this.proximityGlow  = 0.0;
+      this.interactionState = 'Candle Lit';
+      return;
+    }
+
+    const pos = this.fingerPos;
+    if (!pos) {
+      this.proximity      = 0.0;
+      this.proximityGlow  = lerp(this.proximityGlow, 0.0, 0.15);
+      this.interactionState = 'Waiting...';
+      return;
+    }
+
+    const wick = this._getWickPos(W, H);
+    if (!wick) {
+      this.proximity      = 0.0;
+      this.proximityGlow  = lerp(this.proximityGlow, 0.0, 0.15);
+      this.interactionState = 'Waiting...';
+      return;
+    }
+
+    const dx = pos.x - wick.x;
+    const dy = pos.y - wick.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    this.isNearWick = dist < 80;
+
+    // Detection zones: Outer (80px) and Inner (20px)
+    if (dist >= 80) {
+      this.proximity = 0.0;
+      this.interactionState = 'Finger Detected';
+    } else if (dist <= 20) {
+      this.proximity = 1.0;
+      this.interactionState = 'Igniting...';
+    } else {
+      // 20 < dist < 80: Linear gradient scaling
+      this.proximity = (80 - dist) / 60;
+      this.interactionState = 'Ready to Ignite';
+    }
+
+    // Easing transition for the glow brightness and radius
+    this.proximityGlow = lerp(this.proximityGlow, this.proximity, 0.15);
+  }
+
+  updateIgnition(W, H) {
+    const t = this._t;
+
+    // Check extinguish toggle: If candle is lit and finger touches wick
+    if (this.isLit) {
+      const pos = this.fingerPos;
+      if (pos) {
+        const wick = this._getWickPos(W, H);
+        if (wick) {
+          const dx = pos.x - wick.x;
+          const dy = pos.y - wick.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          // If touching wick (inner 20px) after cooldown (1.5 seconds)
+          if (dist <= 20 && t - this.lastToggleTime > 1.5) {
+            this.extinguish();
+            if (typeof this.onExtinguish === 'function') {
+              this.onExtinguish();
+            }
+          }
+        }
+      }
+      return;
+    }
+
+    // Ignition timer check: Must dwell inside 20px for 400ms
+    if (this.interactionState === 'Igniting...') {
+      if (this.ignitionTimer === null) {
+        this.ignitionTimer = t; // start countdown
+      } else if (t - this.ignitionTimer >= 0.40) { // 400ms completed
+        this.ignite();
+        if (typeof this.onIgnite === 'function') {
+          this.onIgnite();
+        }
+        this.ignitionTimer = null;
+      }
+    } else {
+      // Finger left the touch boundary, reset countdown
+      this.ignitionTimer = null;
+    }
+  }
+
+  /* ─────────── Rendering Elements ─────────── */
+
   _frame() {
     const ctx = this.ctx;
     const W   = this.mainCanvas.width;
@@ -159,27 +305,53 @@ export class AnimationEngine {
     // 2 — Vignette
     this._drawVignette(ctx, W, H);
 
-    // 3 — Candle image (multiply = white disappears)
+    // 3 — Soft shadow directly beneath the candle
+    this._drawShadow(ctx, W, H);
+
+    // 4 — Candle image
     this._drawCandle(ctx, W, H, t);
 
-    // 4 — Floor glow when lit
+    // 5 — Proximity updates (mapping distance to 0.0 - 1.0)
+    this.updateProximity(W, H);
+
+    // 6 — Ignition timer checking
+    this.updateIgnition(W, H);
+
+    // 7 — Render proximity glow halo & wick illumination
+    this.renderGlow(ctx, W, H, t);
+
+    // 8 — Ambient glow when lit
     if (this.isLit || this.extinguishTime !== null) {
       const litOpacity = this.isLit ? 1.0 : Math.max(0, 1 - (t - this.extinguishTime) / 0.8);
-      if (litOpacity > 0) this._drawFloorGlow(ctx, W, H, t, litOpacity);
+      if (litOpacity > 0) this._drawAmbientGlow(ctx, W, H, t, litOpacity);
     }
 
-    // 5 — Particles
-    this._updateParticles(ctx, W, H, t);
+    // 9 — Update & draw particles
+    this.updateParticles(ctx, W, H, t);
 
-    // 6 — Flame & smoke
+    // 10 — Flame & smoke
     const showFlame = this.isLit || (this.extinguishTime !== null && t - this.extinguishTime < 0.55);
     const showSmoke = this.isLit || (this.extinguishTime !== null && t - this.extinguishTime < 2.5);
 
     if (showFlame) this._drawFlame(ctx, W, H, t);
     if (showSmoke) this._drawSmoke(ctx, W, H, t);
 
-    // 7 — Finger dot
+    // 11 — Finger dot
     this._drawFingerDot(ctx, W, t);
+  }
+
+  /* ─────────── Candle Shadow ─────────── */
+  _drawShadow(ctx, W, H) {
+    const candleBottomY = H - 35;
+    const cw = Math.max(120, Math.min(260, W * 0.22));
+    const shadowOpacity = this.isLit ? 0.07 : 0.18;
+
+    ctx.save();
+    ctx.fillStyle = `rgba(0, 0, 0, ${shadowOpacity})`;
+    ctx.beginPath();
+    ctx.ellipse(W / 2, candleBottomY, cw * 0.35, cw * 0.08, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 
   /* ─────────── Vignette ─────────── */
@@ -195,22 +367,18 @@ export class AnimationEngine {
   _drawCandle(ctx, W, H, t) {
     if (!this.candleImg || !this.candleImg.complete) return;
 
-    // Responsive width: ~22% of viewport, clamped
     const cw = Math.max(120, Math.min(260, W * 0.22));
     const ch = this.candleImg.naturalHeight * (cw / this.candleImg.naturalWidth);
     const cx = (W - cw) / 2;
-    const cy = H - ch;
+    const cy = (H - 35) - ch;
 
-    // Cache for wick position
     this._candleRect = { x: cx, y: cy, w: cw, h: ch };
 
-    // Multiply blend: white pixels × dark background = dark (disappear)
     ctx.save();
     ctx.globalCompositeOperation = 'multiply';
     ctx.drawImage(this.candleImg, cx, cy, cw, ch);
     ctx.restore();
 
-    // Warm lit glow on candle body when lit
     if (this.isLit) {
       const pulse = 0.8 + 0.2 * Math.sin(t * 2.6);
       ctx.save();
@@ -223,39 +391,97 @@ export class AnimationEngine {
     }
   }
 
-  /* ─────────── Floor Glow ─────────── */
-  _drawFloorGlow(ctx, W, H, t, opacity = 1) {
-    const pulse = 0.7 + 0.15 * Math.sin(t * 2.3) + 0.05 * Math.sin(t * 5.7);
-    const g = ctx.createRadialGradient(W/2, H, 0, W/2, H, W * 0.5);
-    g.addColorStop(0,    `rgba(255, 155, 35, ${0.15 * pulse * opacity})`);
-    g.addColorStop(0.45, `rgba(190, 90,  10, ${0.06 * pulse * opacity})`);
+  /* ─────────── Ambient Glow ─────────── */
+  _drawAmbientGlow(ctx, W, H, t, opacity = 1) {
+    const candleBottomY = H - 35;
+    const pulse = 0.95 + 0.05 * Math.sin(t * 3.5);
+    const radius = 120 * pulse * opacity;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+
+    const g = ctx.createRadialGradient(W/2, candleBottomY, 0, W/2, candleBottomY, radius);
+    g.addColorStop(0,    `rgba(255, 154, 46, ${0.4 * opacity})`);
+    g.addColorStop(0.5,  `rgba(255, 120, 30, ${0.15 * opacity})`);
     g.addColorStop(1,    'rgba(0,0,0,0)');
     ctx.fillStyle = g;
-    ctx.fillRect(0, 0, W, H);
+    ctx.beginPath();
+    ctx.arc(W/2, candleBottomY, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    const baseGlow = ctx.createRadialGradient(W/2, candleBottomY, 0, W/2, candleBottomY, 35 * pulse * opacity);
+    baseGlow.addColorStop(0, `rgba(255, 200, 80, ${0.5 * opacity})`);
+    baseGlow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = baseGlow;
+    ctx.beginPath();
+    ctx.arc(W/2, candleBottomY, 35 * pulse * opacity, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
   }
 
-  /* ─────────── Particles ─────────── */
-  _updateParticles(ctx, W, H, t) {
-    // Ambient dust
-    if (Math.random() < 0.10) {
-      this._particles.push(new Particle(
-        Math.random() * W,
-        Math.random() * H * 0.8 + H * 0.1,
-        'glow'
-      ));
+  /* ─────────── renderGlow (Proximity Feedback) ─────────── */
+  renderGlow(ctx, W, H, t) {
+    const wick = this._getWickPos(W, H);
+    if (!wick) return;
+
+    if (!this.isLit && this.proximityGlow > 0.01) {
+      const val = this.proximityGlow;
+      const pulse = 1.0 + 0.06 * Math.sin(t * 11);
+
+      ctx.save();
+      ctx.globalCompositeOperation = 'screen';
+
+      // 1 — Soft warm orange halo around wick
+      const radius = (35 + 45 * val) * pulse;
+      const g = ctx.createRadialGradient(wick.x, wick.y, 0, wick.x, wick.y, radius);
+      g.addColorStop(0,   `rgba(255, 145, 40, ${0.45 * val})`);
+      g.addColorStop(0.4, `rgba(255, 95,  20, ${0.18 * val})`);
+      g.addColorStop(1,   'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(wick.x, wick.y, radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 2 — Wick core brightening (intensity climbs as we approach)
+      const coreR = (4 + 6 * val) * pulse;
+      const coreG = ctx.createRadialGradient(wick.x, wick.y, 0, wick.x, wick.y, coreR);
+      coreG.addColorStop(0,   `rgba(255, 238, 160, ${0.85 * val})`);
+      coreG.addColorStop(0.5, `rgba(255, 165, 30,  ${0.45 * val})`);
+      coreG.addColorStop(1,   'rgba(0,0,0,0)');
+      ctx.fillStyle = coreG;
+      ctx.beginPath();
+      ctx.arc(wick.x, wick.y, coreR, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+    }
+  }
+
+  /* ─────────── Particles (Pre- & Post-Ignition) ─────────── */
+  updateParticles(ctx, W, H, t) {
+    const wick = this._getWickPos(W, H);
+
+    // Spawn tiny golden particles before ignition when finger is approaching
+    if (!this.isLit && this.proximityGlow > 0.05 && wick) {
+      // Proportional spawn chance
+      const spawnChance = 0.08 * this.proximityGlow;
+      if (Math.random() < spawnChance) {
+        this._particles.push(new Particle(wick.x, wick.y, 'gold'));
+      }
     }
 
-    // Sparks near flame when lit
-    if (this.isLit && Math.random() < 0.30) {
-      const wick = this._getWickPos(W, H);
-      if (wick) this._particles.push(new Particle(wick.x, wick.y - 10, 'spark'));
+    // Spawn post-ignition embers
+    if (this.isLit && Math.random() < 0.28 && wick) {
+      this._particles.push(new Particle(wick.x, wick.y - 12, 'glow'));
     }
 
+    // Update and draw
     this._particles = this._particles.filter(p => {
       p.update();
       if (p.isDead) return false;
 
-      const alpha = p.type === 'spark' ? p.life * 0.85 : p.life * 0.20;
+      const alpha = p.type === 'spark' ? p.life * 0.9 : p.life * (p.type === 'gold' ? 0.75 : 0.25);
       ctx.save();
       ctx.globalAlpha = alpha;
       const r = p.radius * 2.8;
@@ -279,12 +505,10 @@ export class AnimationEngine {
     const wick = this._getWickPos(W, H);
     if (!wick) return;
 
-    // ── Ignition animation (0 → 0.7 s) ──
     const elapsed       = this.igniteTime !== null ? t - this.igniteTime : 999;
     const igniteScale   = elapsed < 0.7 ? 0.35 + 0.65 * (elapsed / 0.7) : 1.0;
     const igniteOpacity = elapsed < 0.4 ? elapsed / 0.4 : 1.0;
 
-    // ── Extinguish fade-out (0 → 0.5 s) ──
     let extOpacity = 1.0;
     if (this.extinguishTime !== null) {
       const ext = t - this.extinguishTime;
@@ -294,39 +518,41 @@ export class AnimationEngine {
     const opacity = igniteOpacity * extOpacity;
     if (opacity <= 0.01) return;
 
-    // ── Organic flicker ──
+    // Organic flicker + continuous movement
     const fx  = smoothNoise(t * 3.7) * 2.5;
     const fy  = smoothNoise(t * 2.9) * 1.5;
     const fs  = 1 + smoothNoise(t * 5.1) * 0.04;
     const fsx = 1 + smoothNoise(t * 4.3) * 0.03;
+    const rot = smoothNoise(t * 2.1) * 0.04; // Gentle rotation sway
 
     ctx.save();
     ctx.translate(wick.x + fx, wick.y + fy);
+    ctx.rotate(rot);
     ctx.scale(igniteScale * fs * fsx, igniteScale * fs);
     ctx.globalAlpha = opacity;
 
-    // ── Layer 1: Outer orange halo ──
+    // Layer 1: Outer orange halo
     this._flameShape(ctx, 0, 0, 16, 7,
       [[0,'rgba(255,85,0,0)'],[0.35,'rgba(255,85,0,0.18)'],
        [0.7,'rgba(255,60,0,0.08)'],[1,'rgba(255,40,0,0)']],
       -36
     );
 
-    // ── Layer 2: Amber mid ──
+    // Layer 2: Amber mid
     this._flameShape(ctx, 0, -2, 10, 4,
       [[0,'rgba(255,180,20,0)'],[0.2,'rgba(255,165,15,0.82)'],
        [0.6,'rgba(255,100,0,0.55)'],[1,'rgba(220,60,0,0)']],
       -40
     );
 
-    // ── Layer 3: Yellow core ──
+    // Layer 3: Yellow core
     this._flameShape(ctx, 0, -9, 5.5, 2.5,
       [[0,'rgba(255,255,200,0.95)'],[0.3,'rgba(255,230,80,0.88)'],
        [0.7,'rgba(255,160,0,0.4)'],[1,'rgba(255,80,0,0)']],
       -46
     );
 
-    // ── Layer 4: White-hot tip ──
+    // Layer 4: White-hot tip
     this._flameShape(ctx, 0, -18, 2.5, 1.5,
       [[0,'rgba(255,255,255,0.98)'],[0.4,'rgba(255,255,220,0.72)'],
        [1,'rgba(255,210,60,0)']],
@@ -335,7 +561,7 @@ export class AnimationEngine {
 
     ctx.restore();
 
-    // ── Soft glow at wick base ──
+    // Soft glow at wick base
     ctx.save();
     ctx.globalAlpha = opacity;
     const glowP = 0.65 + 0.2 * Math.sin(t * 2.2) + 0.08 * Math.sin(t * 6.3);
@@ -350,10 +576,6 @@ export class AnimationEngine {
     ctx.restore();
   }
 
-  /**
-   * Draw one teardrop-shaped flame layer.
-   * Origin = base of flame (wick tip). tipY < 0 (points upward).
-   */
   _flameShape(ctx, dx, dy, rx, ry, stops, tipY) {
     ctx.save();
     ctx.translate(dx, dy);
@@ -376,7 +598,6 @@ export class AnimationEngine {
     const wick = this._getWickPos(W, H);
     if (!wick) return;
 
-    // Spawn above flame tip; more smoke when extinguishing
     const isExtinguishing = this.extinguishTime !== null && (t - this.extinguishTime) < 2.5;
     const rate = isExtinguishing ? 0.55 : 0.12;
 
@@ -412,7 +633,6 @@ export class AnimationEngine {
 
     ctx.save();
 
-    // Outer glow halo
     ctx.globalAlpha = 0.82;
     const g = ctx.createRadialGradient(x, y, 0, x, y, r * 3.5);
     g.addColorStop(0,   this.isNearWick ? 'rgba(255,110,0,0.6)'  : 'rgba(255,220,80,0.5)');
@@ -423,7 +643,6 @@ export class AnimationEngine {
     ctx.arc(x, y, r * 3.5, 0, Math.PI * 2);
     ctx.fill();
 
-    // Core dot
     ctx.globalAlpha = 0.95;
     ctx.fillStyle   = color;
     ctx.shadowColor = color;
@@ -437,16 +656,12 @@ export class AnimationEngine {
 
   /* ─────────── Helpers ─────────── */
 
-  /**
-   * Wick tip position in canvas coords.
-   * candle.png: wick is at ~50% horizontally, ~7% from top of image.
-   */
   _getWickPos(W, H) {
     const r = this._candleRect;
     if (!r) return null;
     return {
       x: r.x + r.w * 0.50,
-      y: r.y + r.h * 0.07,   // 7% from top = very tip of the candle
+      y: r.y + r.h * 0.07,
     };
   }
 }

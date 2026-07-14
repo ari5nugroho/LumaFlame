@@ -55,8 +55,8 @@ let engine   = null;
 ══════════════════════════════════════════════════════════════ */
 function handleIgnite() {
   console.log('[VCL] 🕯️  Candle ignited!');
-  engine.ignite();
-  setStatus('Candle lit ✦  — touch again to extinguish', 'active');
+  if (candle) candle.light();
+  setStatus('Candle Lit', 'active');
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -64,13 +64,8 @@ function handleIgnite() {
 ══════════════════════════════════════════════════════════════ */
 function handleExtinguish() {
   console.log('[VCL] 💨  Candle extinguished!');
-  engine.extinguish();
-  setStatus('Candle extinguished — touch to relight', 'active');
-
-  // After cooldown, prompt to re-light
-  setTimeout(() => {
-    if (!candle.isLit) setStatus('Raise your hand…', 'active');
-  }, 2000);
+  if (candle) candle.extinguish();
+  setStatus('Waiting...', 'active');
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -84,27 +79,21 @@ function onBeforeFrame() {
   if (tracker) tracker.updateScreenCoords(W, H);
 
   // Sync finger position to engine for rendering
-  engine.fingerPos = tracker?.indexTipScreen ?? null;
+  if (engine) {
+    engine.fingerPos = tracker?.indexTipScreen ?? null;
 
-  // Run collision check
-  if (detector) {
-    detector.check(W, H);
-    engine.isNearWick = detector.isNearWick;
-
-    // Update status chip based on tracking state
-    if (!candle.isLit && !engine.extinguishTime) {
-      if (tracker?.indexTipScreen) {
-        setStatus(
-          detector.isNearWick ? 'Touch the wick! 🔥' : 'Hand detected',
-          'tracking'
-        );
-      } else {
-        // Only update status if not showing a persistent message
-        const cur = statusText.textContent;
-        if (cur === 'Hand detected' || cur === 'Raise your hand…') {
-          setStatus('Raise your hand…', 'active');
-        }
-      }
+    // Dynamically synchronize the status chip with engine states
+    const state = engine.interactionState;
+    if (state === 'Waiting...') {
+      setStatus('Waiting...', 'active');
+    } else if (state === 'Finger Detected') {
+      setStatus('Finger Detected', 'tracking');
+    } else if (state === 'Ready to Ignite') {
+      setStatus('Ready to Ignite', 'tracking');
+    } else if (state === 'Igniting...') {
+      setStatus('Igniting...', 'tracking');
+    } else if (state === 'Candle Lit') {
+      setStatus('Candle Lit', 'active');
     }
   }
 }
@@ -130,6 +119,8 @@ async function init() {
 
     /* ── 4. Animation engine ────────────── */
     engine = new AnimationEngine(mainCanvas, webcamEl, candleImg);
+    engine.onIgnite     = handleIgnite;
+    engine.onExtinguish = handleExtinguish;
 
     // Inject per-frame hook
     const _origFrame = engine._frame.bind(engine);
@@ -152,13 +143,18 @@ async function init() {
     });
 
     tracker.onHandLost = () => {
-      if (!candle.isLit) setStatus('Raise your hand…', 'active');
+      if (engine) {
+        engine.fingerPos = null;
+        engine.interactionState = 'Waiting...';
+      }
+      setStatus('Waiting...', 'active');
     };
 
     await tracker.init();
-    setStatus('Raise your hand…', 'active');
+    setStatus('Waiting...', 'active');
 
     /* ── 7. Collision detector ──────────── */
+    // Kept for backward compatibility and clean modularity
     detector = new CollisionDetector(candle, tracker, engine);
     detector.onIgnite     = handleIgnite;
     detector.onExtinguish = handleExtinguish;
