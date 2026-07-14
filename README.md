@@ -1,30 +1,29 @@
-# 🕯️ Virtual Candle Lighting
+# 🕯️ LumaFlame — Virtual Candle Lighting
 
-An interactive web application that uses your webcam to detect your hand.  
-Touch the candle's wick with your index finger tip to light it with a realistic flame.
+An interactive, cinematic web application that uses your webcam to track your hand. Bring your index finger tip to the candle's wick to ignite a realistic procedural flame with magical proximity responses.
 
 ---
 
 ## Features
 
-- **Real-time Hand Tracking** — MediaPipe Hands (landmark #8, index finger tip)
-- **Procedural Flame** — Multi-layer canvas-drawn flame with realistic flicker
-- **Collision Detection** — Euclidean distance check against 30px wick radius
-- **Particle System** — Floating ambient sparks + rising smoke
-- **Warm Glow Effects** — Radial gradients, floor glow, vignette
-- **Dark Magical UI** — Cormorant Garamond serif font, gold palette
-- **Fully Responsive** — Desktop, tablet, mobile
+- **Real-time Hand Tracking** — Powered by MediaPipe Hands (tracking landmark #8, index finger tip).
+- **Proximity Ignition System** — The wick glows and releases gold particles as your finger approaches (outer 80px radius). Holding your finger inside the ignition zone (inner 20px radius) for 400ms triggers a spark burst and ignites the flame.
+- **Volumetric Dynamic Light** — Realistic warm indirect illumination overlay centered on the flame that breathes naturally and scales with screen size.
+- **Toggle Control** — Touch the flame/wick again after ignition to extinguish it, releasing rising wisps of smoke.
+- **Performance Scaling** — Automatically scales particle counts and spawn rates based on device class (100% desktop, 75% tablet, 50% mobile) to ensure smooth 60fps rendering.
+- **Responsive Aspect-Ratio Cover** — Custom canvas video mapping mirrors the camera feed and crops to cover the display area cleanly on both portrait and landscape viewports.
+- **Retina & Safe Areas** — High-DPR canvas scaling guarantees crisp details on HiDPI/Retina screens, with layout protection for iPhone notch / Dynamic Island safe-area insets.
 
 ---
 
 ## Tech Stack
 
 | Layer | Technology |
-|-------|-----------|
-| Structure | HTML5 semantic |
-| Style | Vanilla CSS3 (custom properties, animations) |
-| Logic | Vanilla JS ES6 Modules |
-| Hand Tracking | MediaPipe Hands (CDN) |
+|---|---|
+| Structure | HTML5 semantic markup |
+| Style | Vanilla CSS3 (custom variables, modern typography clamp, safe-area parameters) |
+| Logic | Vanilla JavaScript (ES6 Modules) |
+| Hand Tracking | MediaPipe Hands (via CDN) |
 | Rendering | HTML5 Canvas 2D + requestAnimationFrame |
 
 ---
@@ -33,24 +32,25 @@ Touch the candle's wick with your index finger tip to light it with a realistic 
 
 ```
 fire/
-├── index.html          ← App shell + MediaPipe CDN scripts
-├── style.css           ← Dark theme, candle/flame/glow styles
-├── script.js           ← Main orchestrator (ES6 module)
-├── js/
-│   ├── camera.js       ← CameraManager (getUserMedia)
-│   ├── handTracking.js ← HandTracker (MediaPipe wrapper)
-│   ├── candle.js       ← Candle state + wick position
-│   ├── collision.js    ← CollisionDetector (Euclidean dist)
-│   └── animation.js    ← AnimationEngine (rAF render loop)
-└── assets/
-    └── lilin.png       ← Gold ornate candle holder (transparent bg)
+├── index.html          ← Main viewport shell & MediaPipe CDN scripts
+├── style.css           ← Dark ambient themes, animations, & safe-area responsive media queries
+├── script.js           ← Main orchestrator, listener handlers, & coordinate mapping
+├── assets/
+│   └── candle.png      ← Gold ornate baroque candle holder (transparent background)
+└── js/
+    ├── camera.js       ← CameraManager (camera permissions & media stream setup)
+    ├── handTracking.js ← HandTracker (MediaPipe initialization & tracking)
+    ├── candle.js       ← State holder for candle status
+    ├── collision.js    ← Backward compatibility placeholder
+    ├── dynamicLight.js ← Volumetric breathing radial light source
+    └── animation.js    ← AnimationEngine (DPR canvas rendering loop, physics, & drawing)
 ```
 
 ---
 
 ## Running Locally
 
-Because ES6 modules require a server (CORS), use any static server:
+Because ES6 modules require a secure server context or local server to prevent CORS issues, use a static server of your choice:
 
 ```bash
 # Python 3
@@ -58,38 +58,24 @@ python -m http.server 8080
 
 # Node.js (npx)
 npx serve .
-
-# VS Code
-Use "Live Server" extension → Right-click index.html → Open with Live Server
 ```
 
-Then open: **http://localhost:8080**
-
----
-
-## How It Works
-
-1. **Camera** starts and webcam feed flows into MediaPipe
-2. **MediaPipe Hands** detects landmark #8 (index finger tip) each frame
-3. Coordinates are **mirrored** to match the CSS-flipped canvas
-4. **Euclidean distance** is computed between finger tip and wick centre
-5. If `dist < 30px` → **ignition fires** → flame animates in
-6. The **AnimationEngine** draws everything via `requestAnimationFrame`
+Then open: **`http://localhost:8080`**
 
 ---
 
 ## Wick Calibration
 
-The wick hit area is calibrated for `lilin.png`:
-- Horizontal: 50% of image width
-- Vertical: ~12.5% from top of image
+The wick coordinate detection is calibrated precisely for `assets/candle.png`:
+- Horizontal: `50%` of image width
+- Vertical: `7%` from top of image boundary
 
-To adjust, edit `_wickFracX` and `_wickFracY` in [`js/candle.js`](js/candle.js).
+To modify coordinate scaling or offset positioning, adjust `_getWickPos(W, H)` in [`js/animation.js`](js/animation.js).
 
 ---
 
 ## Browser Requirements
 
 - Chrome 80+ / Edge 80+ / Firefox 75+ / Safari 14+
-- Webcam permission required
-- Internet connection (for MediaPipe CDN + Google Fonts)
+- Webcam permission allowed
+- Internet connection (required to load MediaPipe WASM and Google Fonts from CDN)
