@@ -1,0 +1,297 @@
+/* ═══════════════════════════════════════════════════════════════
+   VIRTUAL CANDLE LIGHTING — style.css
+   A magical dark atmosphere with warm candlelight aesthetics
+═══════════════════════════════════════════════════════════════ */
+
+/* ── CSS Variables ─────────────────────────────────────────── */
+:root {
+  --bg-dark:        #0a0705;
+  --bg-mid:         #12100d;
+  --gold:           #c8922a;
+  --gold-light:     #f0c060;
+  --amber:          #ff9a2e;
+  --text-cream:     #f5e6c8;
+  --text-muted:     rgba(245, 230, 200, 0.45);
+  --font-serif:     'Cormorant Garamond', 'EB Garamond', Georgia, serif;
+}
+
+/* ── Reset & Base ───────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-dark);
+  font-family: var(--font-serif);
+  color: var(--text-cream);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Loading Screen ─────────────────────────────────────────── */
+#loading-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: radial-gradient(ellipse at center, #1c1208 0%, #050402 70%), #080604;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.8s ease, visibility 0.8s ease;
+}
+
+#loading-screen.fade-out {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.loading-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+.loading-flame {
+  width: 60px;
+  height: 90px;
+  animation: loadingFlicker 1.4s ease-in-out infinite alternate;
+  filter: drop-shadow(0 0 18px #ff8c00) drop-shadow(0 0 40px #ff4500);
+}
+
+.loading-flame svg { width: 100%; height: 100%; }
+
+@keyframes loadingFlicker {
+  0%   { transform: scaleX(1)    scaleY(1)    rotate(-1deg);   filter: drop-shadow(0 0 14px #ff8c00); }
+  33%  { transform: scaleX(0.94) scaleY(1.04) rotate(1deg);    filter: drop-shadow(0 0 22px #ffb347); }
+  66%  { transform: scaleX(1.04) scaleY(0.97) rotate(-0.5deg); }
+  100% { transform: scaleX(0.97) scaleY(1.05) rotate(1.5deg);  filter: drop-shadow(0 0 30px #ff6600); }
+}
+
+.loading-text {
+  font-size: 1.1rem;
+  font-weight: 300;
+  letter-spacing: 0.25em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.dots {
+  display: inline-block;
+  animation: dotPulse 1.4s steps(4, end) infinite;
+  width: 1.8em;
+  overflow: hidden;
+  vertical-align: bottom;
+}
+
+@keyframes dotPulse {
+  0%   { width: 0;    }
+  25%  { width: 0.5em; }
+  50%  { width: 1em;   }
+  75%  { width: 1.5em; }
+  100% { width: 1.8em; }
+}
+
+/* ── App Layout ─────────────────────────────────────────────── */
+#app {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: radial-gradient(ellipse 90% 70% at 50% 90%, #1e1008 0%, #0a0705 60%, #050302 100%);
+  transition: background 1.5s ease;
+}
+
+/* Background ambient particles (CSS only) */
+#bg-particles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+}
+
+#bg-particles::before,
+#bg-particles::after {
+  content: '';
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(255, 200, 80, 0.15);
+  box-shadow:
+    120px 200px 0 rgba(255,180,60,0.10),
+    340px 420px 0 rgba(255,200,80,0.08),
+    560px 180px 0 rgba(255,160,40,0.12),
+    780px 350px 0 rgba(255,200,80,0.07),
+    200px 580px 0 rgba(255,180,60,0.09),
+    640px 480px 0 rgba(255,200,80,0.06),
+    960px 250px 0 rgba(255,160,40,0.10),
+    80px  700px 0 rgba(255,200,80,0.05),
+    1100px 400px 0 rgba(255,180,60,0.08),
+    450px 650px 0 rgba(255,200,80,0.06);
+  animation: driftUp 18s linear infinite;
+}
+
+#bg-particles::after {
+  animation-delay: -9s;
+  box-shadow:
+    220px 300px 0 rgba(255,200,80,0.07),
+    480px 120px 0 rgba(255,180,60,0.10),
+    700px 480px 0 rgba(255,200,80,0.08),
+    880px 200px 0 rgba(255,160,40,0.06),
+    150px 450px 0 rgba(255,200,80,0.05),
+    520px 600px 0 rgba(255,180,60,0.07),
+    990px 350px 0 rgba(255,200,80,0.09);
+}
+
+@keyframes driftUp {
+  from { transform: translateY(0); }
+  to   { transform: translateY(-100vh); }
+}
+
+/* ── Header ─────────────────────────────────────────────────── */
+#app-header {
+  position: relative;
+  z-index: 10;
+  text-align: center;
+  padding: 18px 20px 10px;
+  pointer-events: none;
+}
+
+#app-title {
+  font-size: clamp(1.4rem, 3.5vw, 2.2rem);
+  font-weight: 300;
+  letter-spacing: 0.15em;
+  color: var(--gold-light);
+  text-shadow: 0 0 30px rgba(255, 180, 60, 0.6), 0 2px 4px rgba(0,0,0,0.6);
+  line-height: 1.2;
+}
+
+#app-subtitle {
+  margin-top: 5px;
+  font-size: clamp(0.75rem, 2vw, 0.95rem);
+  font-style: italic;
+  font-weight: 300;
+  letter-spacing: 0.2em;
+  color: var(--text-muted);
+  opacity: 0;
+  animation: fadeInSlow 1.2s ease 1.5s forwards;
+}
+
+@keyframes fadeInSlow { to { opacity: 1; } }
+
+/* ── Viewport ───────────────────────────────────────────────── */
+#viewport {
+  position: relative;
+  flex: 1;
+  width: 100%;
+  max-width: 960px;
+  overflow: hidden;
+  border-radius: 12px 12px 0 0;
+  box-shadow: 0 -4px 40px rgba(0,0,0,0.6),
+              inset 0 0 0 1px rgba(255,180,60,0.06);
+  background: #050302;
+}
+
+/* Hidden webcam — off-screen, used by MediaPipe */
+#webcam {
+  position: absolute;
+  top: -9999px;
+  left: -9999px;
+  width: 640px;
+  height: 480px;
+}
+
+/* Main canvas — covers the full viewport, no CSS transform */
+#main-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  /* NO scaleX(-1) here — mirroring is done in JS drawImage */
+}
+
+/* ── Status Chip ─────────────────────────────────────────────── */
+#status-chip {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px 6px 10px;
+  border-radius: 999px;
+  background: rgba(10, 7, 5, 0.65);
+  border: 1px solid rgba(255, 180, 60, 0.18);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  transition: opacity 0.4s ease;
+}
+
+#status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #555;
+  transition: background 0.3s ease, box-shadow 0.3s ease;
+  flex-shrink: 0;
+}
+
+#status-chip.active #status-dot {
+  background: #4caf50;
+  box-shadow: 0 0 6px rgba(76, 175, 80, 0.7);
+}
+
+#status-chip.tracking #status-dot {
+  background: var(--amber);
+  box-shadow: 0 0 8px rgba(255, 154, 46, 0.8);
+  animation: statusPulse 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes statusPulse {
+  0%   { box-shadow: 0 0 4px  rgba(255, 154, 46, 0.6); }
+  100% { box-shadow: 0 0 14px rgba(255, 154, 46, 1.0); }
+}
+
+/* ── Footer ─────────────────────────────────────────────────── */
+#app-footer {
+  position: relative;
+  z-index: 10;
+  padding: 10px 20px 14px;
+  text-align: center;
+  pointer-events: none;
+}
+
+#app-footer p {
+  font-size: clamp(0.65rem, 1.8vw, 0.82rem);
+  font-style: italic;
+  letter-spacing: 0.18em;
+  color: var(--text-muted);
+  text-shadow: 0 0 10px rgba(255, 180, 60, 0.2);
+}
+
+/* ── Candle lit — warm ambient atmosphere ────────────────────── */
+body.candle-lit #app {
+  background: radial-gradient(ellipse 80% 65% at 50% 95%, #281a06 0%, #0c0806 55%, #050302 100%);
+}
+
+/* ── Responsive ─────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  #app-title    { font-size: 1.2rem; letter-spacing: 0.1em; }
+  #app-header   { padding: 12px 16px 6px; }
+  #app-footer p { font-size: 0.62rem; }
+  #status-chip  { top: 8px; right: 8px; font-size: 0.65rem; }
+}

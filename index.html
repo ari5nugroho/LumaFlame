@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Virtual Candle Lighting — Touch the wick with your index finger to light the candle using your webcam." />
+  <title>Virtual Candle Lighting</title>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300&family=EB+Garamond:wght@400;500&display=swap" rel="stylesheet" />
+
+  <!-- MediaPipe Hands CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════════
+       LOADING SCREEN
+  ═══════════════════════════════════════════════ -->
+  <div id="loading-screen">
+    <div class="loading-inner">
+      <div class="loading-flame">
+        <svg viewBox="0 0 60 90" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <radialGradient id="fg" cx="50%" cy="70%" r="50%">
+              <stop offset="0%" stop-color="#fff7e0"/>
+              <stop offset="40%" stop-color="#ffb347"/>
+              <stop offset="100%" stop-color="#ff4500" stop-opacity="0"/>
+            </radialGradient>
+          </defs>
+          <ellipse cx="30" cy="70" rx="18" ry="20" fill="url(#fg)" opacity="0.7"/>
+          <path d="M30 5 C20 25 10 40 15 60 C20 75 40 75 45 60 C50 40 40 25 30 5Z" fill="url(#fg)"/>
+        </svg>
+      </div>
+      <p class="loading-text">Initializing<span class="dots">...</span></p>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════
+       MAIN APP
+  ═══════════════════════════════════════════════ -->
+  <div id="app">
+
+    <!-- Ambient background particles (CSS only) -->
+    <div id="bg-particles" aria-hidden="true"></div>
+
+    <!-- Header -->
+    <header id="app-header">
+      <h1 id="app-title">Virtual Candle Lighting</h1>
+      <p id="app-subtitle">Bring your index finger to the wick</p>
+    </header>
+
+    <!-- Camera + Canvas container -->
+    <div id="viewport">
+      <!-- Live webcam feed (hidden, used as MediaPipe source) -->
+      <video id="webcam" playsinline autoplay muted></video>
+
+      <!-- Preloaded candle image (not displayed in DOM — drawn on canvas) -->
+      <img id="candle-img"
+           src="assets/candle.png"
+           alt=""
+           aria-hidden="true"
+           style="display:none; position:absolute; left:-9999px;" />
+
+      <!-- Main canvas — ALL rendering happens here -->
+      <canvas id="main-canvas"></canvas>
+
+      <!-- Status chip -->
+      <div id="status-chip" role="status" aria-live="polite">
+        <span id="status-dot"></span>
+        <span id="status-text">Waiting for camera…</span>
+      </div>
+    </div>
+
+    <!-- Footer hint -->
+    <footer id="app-footer">
+      <p>Point your index finger ✦ Light the flame ✦ Feel the magic</p>
+    </footer>
+
+  </div>
+
+  <!-- Entry script (ES6 Module) -->
+  <script type="module" src="script.js"></script>
+</body>
+</html>
